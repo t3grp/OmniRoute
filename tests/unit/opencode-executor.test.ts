@@ -259,6 +259,26 @@ describe("OpencodeExecutor", () => {
       assert.deepEqual(fetchCalls[0].options.headers, result.headers);
     });
 
+    it("reasserts anonymous free identity after configured and upstream User-Agent overrides", async () => {
+      const input = createInput("minimax-m2.5-free", true, {
+        providerSpecificData: {
+          customUserAgent: "ConfiguredAgent/9.9",
+          extraApiKeys: [],
+        },
+      });
+      input.upstreamExtraHeaders = {
+        "user-agent": "ConnectionAgent/8.8",
+        "x-opencode-client": "browser",
+      };
+
+      const result = await zenExecutor.execute(input);
+
+      assert.equal(result.headers["User-Agent"], "opencode/1.18.31");
+      assert.equal(result.headers["user-agent"], undefined);
+      assert.equal(result.headers["x-opencode-client"], "cli");
+      assert.deepEqual(fetchCalls[0].options.headers, result.headers);
+    });
+
     it("routes opencode-go new models to chat completions", async () => {
       // Register new models
       registerModel("opencode-go", { id: "glm-5.1", name: "GLM-5.1", contextLength: 204800 });

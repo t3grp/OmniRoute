@@ -1037,6 +1037,85 @@ test("invalid JSON payload returns errorCode invalid_json_payload, not upstream_
   assert.notEqual(result.result.errorCode, "upstream_error");
 });
 
+test("OpenCode compatibility tool call fails closed when the caller declared no tools", async () => {
+  const input = baseInput({
+    provider: "opencode",
+    model: "mimo-v2.5-free",
+    clientDeclaredToolNames: [],
+    executeProviderRequest: async () =>
+      makeExecutorResult({
+        id: "chatcmpl-opencode-compat",
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call-compat",
+                  type: "function",
+                  function: { name: "bash", arguments: "{}" },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
+      }),
+  });
+
+  const result = await runNonStreamingProviderLeg(input);
+  assert.equal(result.kind, "error");
+  if (result.kind !== "error") return;
+  assert.equal(result.result.status, 502);
+  assert.equal(result.result.errorCode, "opencode_undeclared_compat_tool_call");
+});
+
+test("OpenCode compatibility tool call is preserved when the caller explicitly declared it", async () => {
+  const input = baseInput({
+    provider: "opencode",
+    model: "mimo-v2.5-free",
+    clientDeclaredToolNames: ["bash"],
+    sourceBody: {
+      model: "mimo-v2.5-free",
+      messages: [{ role: "user", content: "use bash" }],
+      tools: [
+        {
+          type: "function",
+          function: { name: "bash", parameters: { type: "object", properties: {} } },
+        },
+      ],
+    },
+    executeProviderRequest: async () =>
+      makeExecutorResult({
+        id: "chatcmpl-opencode-caller-tool",
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call-caller",
+                  type: "function",
+                  function: { name: "bash", arguments: "{}" },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
+      }),
+  });
+
+  const result = await runNonStreamingProviderLeg(input);
+  assert.equal(result.kind, "ok");
+  if (result.kind !== "ok") return;
+  assert.equal(result.response.choices[0].message.tool_calls[0].function.name, "bash");
+});
+
 test("empty-content fallback with invalid SSE body is 502, not 200 empty", async () => {
   const sseBody = 'data: {"error":{"message":"Devin CLI not found"}}\n\n';
   let executorCallCount = 0;

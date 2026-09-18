@@ -110,6 +110,22 @@ describe("OpencodeExecutor — premium model keyless gate (#8681)", () => {
       assert.equal(response.status, 402);
     });
 
+    it("treats an empty extraApiKeys array as keyless for premium models", async () => {
+      const result = await zenExecutor.execute(
+        createInput("gpt-5", true, { providerSpecificData: { extraApiKeys: [] } })
+      );
+      const response = result instanceof Response ? result : result.response;
+      assert.equal(response.status, 402);
+    });
+
+    it("treats blank-only extraApiKeys as keyless for premium models", async () => {
+      const result = await zenExecutor.execute(
+        createInput("gpt-5", true, { providerSpecificData: { extraApiKeys: ["", "   "] } })
+      );
+      const response = result instanceof Response ? result : result.response;
+      assert.equal(response.status, 402);
+    });
+
     it("allows free model deepseek-v4-flash-free with keyless credentials", async () => {
       // Should reach the upstream fetch (mock returns 200)
       const result = await zenExecutor.execute(createInput("deepseek-v4-flash-free", true, null));

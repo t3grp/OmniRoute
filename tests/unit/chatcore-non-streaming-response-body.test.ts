@@ -62,6 +62,32 @@ test("returns after terminal SSE even when underlying cancel never resolves", as
   assert.equal(cancelled, true);
 });
 
+test("drains by actual SSE content type even when upstreamStream hint is false", async () => {
+  const enc = new TextEncoder();
+  let cancelled = false;
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(enc.encode('data: {"id":"x","choices":[{"delta":{"content":"ok"}}]}\n\n'));
+      controller.enqueue(enc.encode("data: [DONE]\n\n"));
+    },
+    cancel() {
+      cancelled = true;
+      return new Promise(() => {});
+    },
+  });
+  const response = new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+
+  const out = await Promise.race([
+    readNonStreamingResponseBody(response, "text/event-stream", false),
+    new Promise<string>((_, reject) =>
+      setTimeout(() => reject(new Error("false stream hint left terminal SSE hanging")), 1000)
+    ),
+  ]);
+
+  assert.ok(out.includes("[DONE]"));
+  assert.equal(cancelled, true);
+});
+
 // #5152: bound the non-streaming buffer so a runaway upstream body cannot fill the V8 heap.
 
 test("aborts and throws when an SSE stream exceeds the byte cap (no unbounded string)", async () => {
@@ -83,6 +109,26 @@ test("aborts and throws when an SSE stream exceeds the byte cap (no unbounded st
     (err) => err instanceof NonStreamingResponseTooLargeError && err.maxBytes === 8 * 1024
   );
   assert.equal(cancelled, true, "upstream reader must be cancelled on cap exceed");
+});
+
+test("enforces the SSE byte cap even when upstreamStream hint is false", async () => {
+  const enc = new TextEncoder();
+  let cancelled = false;
+  const body = new ReadableStream({
+    pull(controller) {
+      controller.enqueue(enc.encode("data: " + "x".repeat(1024) + "\n"));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const response = new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+
+  await assert.rejects(
+    () => readNonStreamingResponseBody(response, "text/event-stream", false, 8 * 1024),
+    (err) => err instanceof NonStreamingResponseTooLargeError && err.maxBytes === 8 * 1024
+  );
+  assert.equal(cancelled, true);
 });
 
 test("an SSE stream within the cap still drains normally", async () => {
