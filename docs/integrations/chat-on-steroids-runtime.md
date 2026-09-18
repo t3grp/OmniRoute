@@ -117,7 +117,7 @@ COS_SOURCE_DIR=/path/to/chat-on-steroids \
 node scripts/chat-on-steroids/install-cos-source.mjs
 ```
 
-The installer validates package version 2.1.11, refuses to overwrite a different existing `runtime-server.ts`, and patches three exact `src/main/index.ts` anchors for import/start/shutdown. CI applies the same installer to pinned commit `f51acbccdd734f524799ea92bb747be765fba1e4`, asserts that only `src/main/index.ts` and `src/main/runtime-server.ts` change, typechecks the patched tree, and runs the full upstream test suite.
+The installer validates package version 2.1.11, refuses to overwrite a different existing `runtime-server.ts`, and patches three exact `upstream CoS main-process entrypoint` anchors for import/start/shutdown. CI applies the same installer to pinned commit `f51acbccdd734f524799ea92bb747be765fba1e4`, asserts that only `upstream CoS main-process entrypoint` and `upstream CoS runtime-server source` change, typechecks the patched tree, and runs the full upstream test suite.
 
 Then build/package/install CoS through its normal release path with the runtime environment variables above.
 
