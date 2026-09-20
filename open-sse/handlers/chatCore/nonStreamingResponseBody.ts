@@ -50,13 +50,14 @@ export const MAX_NONSTREAMING_RESPONSE_BYTES = (() => {
 export async function readNonStreamingResponseBody(
   response: Response,
   contentType: string,
-  upstreamStream: boolean,
+  _upstreamStream: boolean,
   maxBytes: number = MAX_NONSTREAMING_RESPONSE_BYTES
 ): Promise<string> {
+  const isEventStream =
+    contentType.includes("text/event-stream") || contentType.includes("application/x-ndjson");
   if (
-    !upstreamStream ||
     !response.body ||
-    (!contentType.includes("text/event-stream") && !contentType.includes("application/x-ndjson"))
+    !isEventStream
   ) {
     // Reject before buffering when the upstream declares an over-cap Content-Length.
     const declared = Number.parseInt(response.headers.get("content-length") ?? "", 10);

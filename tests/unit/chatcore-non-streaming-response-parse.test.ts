@@ -90,6 +90,40 @@ test("valid SSE payload (by content-type) → ok with SSE-derived format", async
   assert.equal(typeof res.responsePayloadFormat, "string");
 });
 
+test("false upstream stream hint still drains a live terminal SSE and converts it to JSON", async () => {
+  const enc = new TextEncoder();
+  let cancelled = false;
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        enc.encode(
+          'data: {"id":"c1","object":"chat.completion.chunk","choices":[{"delta":{"content":"hello"},"index":0,"finish_reason":null}]}\n\n'
+        )
+      );
+      controller.enqueue(
+        enc.encode(
+          'data: {"id":"c1","object":"chat.completion.chunk","choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}\n\n'
+        )
+      );
+      controller.enqueue(enc.encode("data: [DONE]\n\n"));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+
+  const res = await parseNonStreamingResponseBody({
+    ...baseOpts,
+    upstreamStream: false,
+    providerResponse: new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
+  });
+
+  assert.equal(res.kind, "ok");
+  if (res.kind !== "ok") return;
+  assert.equal(res.looksLikeSSE, true);
+  assert.equal(cancelled, true);
+});
+
 test("SSE detected by body heuristic even with non-stream content-type", async () => {
   const sse =
     'data: {"id":"c1","object":"chat.completion.chunk","choices":[{"delta":{"content":"hi"},"index":0,"finish_reason":"stop"}]}\n\n' +

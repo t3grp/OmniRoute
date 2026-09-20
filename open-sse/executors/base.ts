@@ -535,6 +535,13 @@ export class BaseExecutor {
     return headers;
   }
 
+  /** Provider-specific final header enforcement after all configurable headers merge. */
+  protected finalizeUpstreamHeaders(
+    _headers: Record<string, string>,
+    _credentials: ProviderCredentials | null,
+    _model: string
+  ): void {}
+
   // Override in subclass for provider-specific transformations
   transformRequest(
     model: string,
@@ -1414,6 +1421,7 @@ export class BaseExecutor {
         }
 
         mergeUpstreamExtraHeaders(finalHeaders, upstreamExtraHeaders);
+        this.finalizeUpstreamHeaders(finalHeaders, requestCredentials, model);
         if (this.provider === "cline" || this.provider === "clinepass") {
           applyClineProtocolHeaders(finalHeaders, {
             taskId: headers["X-Task-ID"],

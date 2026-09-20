@@ -32,6 +32,29 @@ function findHeader(headers: Record<string, string>, name: string): string | und
 const OPENCODE_ID_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const OPENCODE_ID_RE = /^(ses|msg)_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const OPENCODE_FREE_CLI_USER_AGENT = "opencode/1.18.31";
+
+export const OPENCODE_FREE_COMPAT_TOOL_NAMES = [
+  "bash",
+  "edit",
+  "glob",
+  "grep",
+  "invalid",
+  "question",
+  "read",
+  "skill",
+  "task",
+  "todowrite",
+  "webfetch",
+  "websearch",
+  "write",
+] as const;
+
+const OPENCODE_FREE_COMPAT_TOOL_NAME_SET = new Set<string>(OPENCODE_FREE_COMPAT_TOOL_NAMES);
+
+export function isOpencodeFreeCompatibilityToolName(name: string): boolean {
+  return OPENCODE_FREE_COMPAT_TOOL_NAME_SET.has(name);
+}
+
 let opencodeIdTimestamp = 0;
 let opencodeIdCounter = 0;
 

@@ -13,6 +13,7 @@ import type {
   ChatCoreErrorResult,
   NonStreamingProviderLegResult,
 } from "@/lib/skills/toolLoopTypes.ts";
+import { extractToolCalls } from "@/lib/skills/interception";
 import type {
   ProviderExecutionOutcome,
   ProviderExecutionPolicy,
@@ -34,6 +35,7 @@ import {
 } from "../../services/modelFamilyFallback.ts";
 import { isEmptyContentResponse } from "../../services/errorClassifier.ts";
 import { FORMATS } from "../../translator/formats.ts";
+import { isOpencodeFreeCompatibilityToolName } from "../../utils/opencodeHeaders.ts";
 
 /* -- exported types -------------------------------------------------------- */
 
@@ -85,6 +87,8 @@ export interface ProviderLegInput {
   getCurrentConnectionId?: () => string;
   effectiveModel?: string;
   translatedBody?: Record<string, unknown>;
+  /** Caller-declared tool names captured before any OmniRoute/provider compatibility injection. */
+  clientDeclaredToolNames?: readonly string[];
   toolNameMap?: Map<string, string> | null;
   requestToolIdentityMap?: Map<string, { namespace?: string; name: string }> | null;
   reasoningCacheScope?: string | null;
@@ -266,6 +270,43 @@ function finishOk(
     params.transformedBody,
     restoreClaudeNames
   );
+
+  // Anonymous OpenCode free-tier admission may require synthetic compatibility
+  // tools upstream. Caller authorization must come only from the pre-injection
+  // request provenance, never from the transformed body containing those tools.
+  if (
+    params.provider.startsWith("opencode") &&
+    input.clientDeclaredToolNames !== undefined &&
+    input.clientDeclaredToolNames.length === 0
+  ) {
+    const syntheticCall = extractToolCalls(body, "openai").find((call) =>
+      isOpencodeFreeCompatibilityToolName(call.name)
+    );
+    if (syntheticCall) {
+      const usage = extractUsage(body, params.provider);
+      const errorCode = "opencode_undeclared_compat_tool_call";
+      const message =
+        "OpenCode returned a compatibility tool call that the client did not declare";
+      const receipt = buildReceipt(input, {
+        httpStatus: 502,
+        errorType: errorCode,
+        usage,
+        termination: "provider_error",
+        latencyMs: Date.now() - params.startMs,
+        startedAt: params.startedAt,
+        endedAt: new Date().toISOString(),
+        connectionId: params.connectionId,
+        model: params.model,
+      });
+      return {
+        kind: "error",
+        result: legError(502, message, new Error(message), null, errorCode, errorCode),
+        receipt,
+        usage,
+      };
+    }
+  }
+
   sanitizeUsagePayloadForRequest(
     body,
     params.transformedBody || params.requestBody,

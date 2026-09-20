@@ -16,7 +16,11 @@ import {
   runWithDirectFetchContext,
   runWithProxyContext,
 } from "../utils/proxyFetch.ts";
-import { applyAnonymousFreeOpencodeHeaders, forwardOpencodeClientHeaders } from "../utils/opencodeHeaders.ts";
+import {
+  applyAnonymousFreeOpencodeHeaders,
+  forwardOpencodeClientHeaders,
+  OPENCODE_FREE_COMPAT_TOOL_NAMES,
+} from "../utils/opencodeHeaders.ts";
 import {
   type AccountProxyConfig,
   type RotatableAccount,
@@ -31,6 +35,35 @@ import {
 import { isNetworkRotationSharedEgressGuardEnabled } from "@/shared/utils/featureFlags";
 
 const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
+
+export { OPENCODE_FREE_COMPAT_TOOL_NAMES };
+
+const OPENCODE_FREE_COMPAT_TOOL_DESCRIPTION =
+  "Do not call this tool. It exists only to match the OpenCode free-tier CLI wire contract.";
+
+function buildAnonymousFreeCompatibilityTools(requestFormat: string | null): Array<Record<string, unknown>> {
+  return OPENCODE_FREE_COMPAT_TOOL_NAMES.map((name) => {
+    const definition = {
+      name,
+      description: OPENCODE_FREE_COMPAT_TOOL_DESCRIPTION,
+      parameters: { type: "object", properties: {} },
+    };
+    return requestFormat === "openai-responses"
+      ? { type: "function", ...definition }
+      : { type: "function", function: definition };
+  });
+}
+
+function hasConfiguredOpencodeKey(
+  credentials: ProviderCredentials | null | undefined,
+  resolvedKey?: string
+): boolean {
+  const extraKeys = credentials?.providerSpecificData?.extraApiKeys;
+  const hasExtraKeys = Array.isArray(extraKeys)
+    ? extraKeys.some((key) => typeof key === "string" && key.trim().length > 0)
+    : Boolean(extraKeys);
+  return Boolean(resolvedKey || credentials?.apiKey || credentials?.accessToken || hasExtraKeys);
+}
 
 /**
  * Per-account proxy configuration, persisted by NoAuthAccountCard under
@@ -269,16 +302,23 @@ export class OpencodeExecutor extends BaseExecutor {
     credentials: ProviderCredentials | null,
     resolvedKey?: string
   ): boolean {
-    const hasConfiguredKey =
-      resolvedKey ||
-      credentials?.apiKey ||
-      credentials?.accessToken ||
-      credentials?.providerSpecificData?.extraApiKeys;
     return (
-      !hasConfiguredKey &&
+      !hasConfiguredOpencodeKey(credentials, resolvedKey) &&
       this.config?.baseUrl === ZEN_BASE_URL &&
       !isPremiumOpencodeModel(model, this.provider)
     );
+  }
+
+  protected override finalizeUpstreamHeaders(
+    headers: Record<string, string>,
+    credentials: ProviderCredentials | null,
+    model: string
+  ): void {
+    if (!this.isAnonymousFreeZenRequest(model, credentials)) return;
+    // Reassert the strict anonymous-free identity after connection/model custom
+    // headers merge. Existing canonical session/request ids are preserved while
+    // malformed overrides are replaced by canonical OpenCode ids.
+    applyAnonymousFreeOpencodeHeaders(headers, headers);
   }
 
   /** Delegates to `isPremiumOpencodeModel`. Exported for testability. */
@@ -485,8 +525,7 @@ export class OpencodeExecutor extends BaseExecutor {
     // is a premium model (not on the free tier), return a clear 402 error
     // instead of proxying the raw upstream 401 "Missing API key" response.
     const creds = input.credentials;
-    const isKeyless =
-      !creds?.apiKey && !creds?.accessToken && !creds?.providerSpecificData?.extraApiKeys;
+    const isKeyless = !hasConfiguredOpencodeKey(creds);
     if (isKeyless && isPremiumOpencodeModel(input.model, this.provider)) {
       const bodyJson = JSON.stringify({
         error: {
@@ -919,33 +958,16 @@ export class OpencodeExecutor extends BaseExecutor {
       typeof modifiedBody === "object" &&
       !Array.isArray(modifiedBody)
     ) {
-      const freeBody = modifiedBody as Record<string, unknown>;
-      // OpenCode 1.18.31 free-tier requests are streaming and carry at least one
-      // tool definition. The upstream gateway rejects a generic OpenAI-shaped
-      // anonymous request even when its IP and model are otherwise accepted.
+      const freeBody = { ...(modifiedBody as Record<string, unknown>) };
+      // OpenCode 1.18.31 anonymous free-tier admission matches the official CLI
+      // wire shape: streaming plus the captured built-in tool-name set. A single
+      // synthetic _noop was proven insufficient (403) while this set was accepted.
+      // Preserve real caller tools verbatim; synthesize only when the caller sent none.
       freeBody.stream = true;
       if (!Array.isArray(freeBody.tools) || freeBody.tools.length === 0) {
-        freeBody.tools =
-          this._requestFormat === "openai-responses"
-            ? [
-                {
-                  type: "function",
-                  name: "_noop",
-                  description: "Do not call this tool. It exists only for API compatibility.",
-                  parameters: { type: "object", properties: {} },
-                },
-              ]
-            : [
-                {
-                  type: "function",
-                  function: {
-                    name: "_noop",
-                    description: "Do not call this tool. It exists only for API compatibility.",
-                    parameters: { type: "object", properties: {} },
-                  },
-                },
-              ];
+        freeBody.tools = buildAnonymousFreeCompatibilityTools(this._requestFormat);
       }
+      modifiedBody = freeBody;
     }
     // 9router#1442: OpenCode upstreams (e.g. kimi-k2.6 via opencode-go) return
     // 400 "Extra inputs are not permitted, field: 'client_metadata'" — an

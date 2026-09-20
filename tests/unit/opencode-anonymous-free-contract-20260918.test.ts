@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import {
   applyAnonymousFreeOpencodeHeaders,
 } from "../../open-sse/utils/opencodeHeaders.ts";
-import { OpencodeExecutor } from "../../open-sse/executors/opencode.ts";
+import {
+  OPENCODE_FREE_COMPAT_TOOL_NAMES,
+  OpencodeExecutor,
+} from "../../open-sse/executors/opencode.ts";
 
 const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
@@ -84,24 +87,89 @@ test("keyed free Zen request keeps normal keyed auth and does not force anonymou
   assert.equal(headers["x-opencode-client"], undefined);
 });
 
-test("anonymous free Zen body is forced to streaming with a compatibility tool", () => {
+test("anonymous free Zen body is forced to streaming with the captured CLI compatibility tools", () => {
   const executor = new OpencodeExecutor("opencode");
+  const input = {
+    model: "mimo-v2.5-free",
+    messages: [{ role: "user", content: "Reply OK" }],
+    stream: false,
+  };
   const output = executor.transformRequest(
     "mimo-v2.5-free",
-    {
-      model: "mimo-v2.5-free",
-      messages: [{ role: "user", content: "Reply OK" }],
-      stream: false,
-    },
+    input,
     false,
     {}
   );
 
   assert.equal(output.stream, true);
   assert.ok(Array.isArray(output.tools));
-  assert.equal(output.tools.length, 1);
-  assert.equal(output.tools[0]?.type, "function");
-  assert.equal(output.tools[0]?.function?.name, "_noop");
+  assert.deepEqual(
+    output.tools.map((tool: any) => tool?.function?.name),
+    [...OPENCODE_FREE_COMPAT_TOOL_NAMES]
+  );
+  assert.equal(input.stream, false, "source request must not be mutated");
+  assert.equal("tools" in input, false, "synthetic tools stay upstream-only");
+});
+
+test("anonymous free Responses body uses the captured CLI compatibility tools in Responses shape", () => {
+  const executor = new OpencodeExecutor("opencode");
+  executor._requestFormat = "openai-responses";
+  const output = executor.transformRequest(
+    "mimo-v2.5-free",
+    { model: "mimo-v2.5-free", input: "Reply OK", stream: false },
+    false,
+    {}
+  );
+
+  assert.equal(output.stream, true);
+  assert.deepEqual(
+    output.tools.map((tool: any) => tool?.name),
+    [...OPENCODE_FREE_COMPAT_TOOL_NAMES]
+  );
+  assert.ok(output.tools.every((tool: any) => tool?.type === "function" && !tool?.function));
+});
+
+test("anonymous free Zen preserves real caller tools and repeated transforms do not stack synthetic tools", () => {
+  const executor = new OpencodeExecutor("opencode");
+  const callerTools = [
+    {
+      type: "function",
+      function: { name: "real_tool", description: "real", parameters: { type: "object" } },
+    },
+  ];
+  const first = executor.transformRequest(
+    "mimo-v2.5-free",
+    { model: "mimo-v2.5-free", messages: [], stream: false, tools: callerTools },
+    false,
+    {}
+  );
+  const second = executor.transformRequest("mimo-v2.5-free", first, false, {});
+
+  assert.deepEqual(first.tools, callerTools);
+  assert.deepEqual(second.tools, callerTools);
+});
+
+test("empty extraApiKeys does not disable anonymous free identity", () => {
+  const executor = new OpencodeExecutor("opencode");
+  const headers = executor.buildHeaders(
+    { providerSpecificData: { extraApiKeys: [] } },
+    false,
+    null,
+    "mimo-v2.5-free"
+  );
+  assert.equal(headers.Authorization, "Bearer public");
+});
+
+test("blank-only extraApiKeys does not disable anonymous free identity", () => {
+  const executor = new OpencodeExecutor("opencode");
+  const headers = executor.buildHeaders(
+    { providerSpecificData: { extraApiKeys: ["", "   "] } },
+    false,
+    null,
+    "mimo-v2.5-free"
+  );
+  assert.equal(headers.Authorization, "Bearer public");
+  assert.equal(headers["User-Agent"], "opencode/1.18.31");
 });
 
 test("keyed free Zen body is not rewritten into the anonymous free contract", () => {
