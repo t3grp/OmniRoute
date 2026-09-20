@@ -21,6 +21,7 @@ import { classifyTier } from "../tierResolver";
 import { getResolvedModelCapabilities } from "@/lib/modelCapabilities";
 import { isVisionModelId } from "@/shared/constants/visionModels";
 import { isVisionBridgeForcedModel } from "@/shared/constants/visionBridgeDefaults";
+import { isStrictBestCodingCandidate } from "./taskFitness";
 
 export type AutoCategory = "coding" | "reasoning" | "vision" | "chat" | "multimodal";
 export type AutoTier =
@@ -116,6 +117,13 @@ interface PoolCandidate {
   resolvedSupportsVision?: boolean;
   resolvedReasoning?: boolean;
   resolvedSupportsThinking?: boolean;
+}
+
+export function buildStrictTaskCandidateFilter(
+  strictTask?: "coding"
+): ((candidate: PoolCandidate) => boolean) | null {
+  if (strictTask !== "coding") return null;
+  return (candidate) => isStrictBestCodingCandidate(candidate.provider, candidate.model);
 }
 
 /**

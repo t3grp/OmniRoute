@@ -178,7 +178,11 @@ export function extractPromptForIntent(body: Record<string, unknown> | null | un
   return "";
 }
 
-export function mapIntentToTaskType(intent: string): "coding" | "analysis" | "default" {
+export function mapIntentToTaskType(
+  intent: string,
+  override?: "coding"
+): "coding" | "analysis" | "default" {
+  if (override === "coding") return "coding";
   switch (intent) {
     case "code":
       return "coding";

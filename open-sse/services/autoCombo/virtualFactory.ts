@@ -21,6 +21,7 @@ import {
 } from "@/lib/modelCapabilities";
 import {
   buildAutoCandidateFilter,
+  buildStrictTaskCandidateFilter,
   tierToWeightVariant,
   type AutoCategory,
   type AutoTier,
@@ -62,6 +63,7 @@ export interface AutoComboSpec {
   category?: AutoCategory;
   tier?: AutoTier;
   family?: ModelFamily;
+  strictTask?: "coding";
 }
 
 /** Once-per-process empty-pool AUTO warns (steady empty is not a metronome). */
@@ -971,11 +973,17 @@ export async function createVirtualAutoComboFromPrepared(
   // #6453: `auto/<family>` narrows by model family instead of category/tier. The
   // two overlays are mutually exclusive on the spec (family takes precedence when
   // both are somehow present, which callers never do in practice).
-  const candidateFilter = spec?.family
+  const overlayFilter = spec?.family
     ? buildFamilyCandidateFilter(spec.family)
     : spec
       ? buildAutoCandidateFilter(spec.category, spec.tier)
       : null;
+  const strictTaskFilter = buildStrictTaskCandidateFilter(spec?.strictTask);
+  const candidateFilter =
+    overlayFilter && strictTaskFilter
+      ? (candidate: VirtualAutoComboCandidate) =>
+          overlayFilter(candidate) && strictTaskFilter(candidate)
+      : overlayFilter || strictTaskFilter;
   if (candidateFilter) {
     const narrowed = candidatePool.filter((candidate) => candidateFilter(candidate));
     const label = spec?.family
@@ -1107,6 +1115,7 @@ export async function createVirtualAutoComboFromPrepared(
     weights,
     explorationRate,
     routerStrategy,
+    ...(spec?.strictTask ? { taskTypeOverride: spec.strictTask } : {}),
   };
 
   // Chaos mode fans out to the top-N most stable models in parallel. Panel size
@@ -1156,6 +1165,15 @@ export async function createVirtualAutoComboFromPrepared(
     // the broadcast mode and stream each panel model back to IDEs that opt in.
     config: {
       auto: autoConfig,
+      ...(spec?.strictTask === "coding"
+        ? {
+            maxRetries: 0,
+            targetTimeoutMs: 25_000,
+            comboTimeoutMs: 50_000,
+            maxGlobalAttempts: 4,
+            failoverBeforeRetry: true,
+          }
+        : {}),
       ...(isChaos
         ? {
             chaos: {

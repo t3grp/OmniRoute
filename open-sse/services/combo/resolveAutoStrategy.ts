@@ -242,7 +242,23 @@ export async function resolveAutoStrategyOrder(
   const intentConfig = getIntentConfig(settings, combo);
   const intent = classifyWithConfig(prompt, intentConfig, systemPrompt);
   recordComboIntent(combo.name, intent);
-  const taskType = mapIntentToTaskType(intent);
+  const configRecord =
+    combo?.config && typeof combo.config === "object"
+      ? (combo.config as Record<string, unknown>)
+      : null;
+  const nestedAutoConfig =
+    configRecord?.auto && typeof configRecord.auto === "object"
+      ? (configRecord.auto as Record<string, unknown>)
+      : null;
+  const directAutoConfig =
+    combo?.autoConfig && typeof combo.autoConfig === "object"
+      ? (combo.autoConfig as Record<string, unknown>)
+      : null;
+  const taskTypeOverride =
+    (directAutoConfig?.taskTypeOverride ?? nestedAutoConfig?.taskTypeOverride) === "coding"
+      ? "coding"
+      : undefined;
+  const taskType = mapIntentToTaskType(intent, taskTypeOverride);
 
   const {
     routingStrategy,

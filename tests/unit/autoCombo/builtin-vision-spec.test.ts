@@ -26,10 +26,14 @@ describe("resolveBuiltinAutoSpec — vision category ids", () => {
     });
   });
 
-  it("legacy flat variants keep their variant mapping", () => {
+  it("best-coding carries a strict coding task contract", () => {
     expect(resolveBuiltinAutoSpec("auto/best-coding", "best-coding")).toEqual({
       variant: "coding",
+      strictTask: "coding",
     });
+  });
+
+  it("other legacy flat variants keep their variant mapping", () => {
     expect(resolveBuiltinAutoSpec("auto/fast", "fast")).toEqual({ variant: "fast" });
     expect(resolveBuiltinAutoSpec("auto/chat", "chat")).toEqual({ variant: undefined });
   });

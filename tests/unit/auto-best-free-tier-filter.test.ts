@@ -37,4 +37,5 @@ test("auto/best-coding does NOT carry a free tier spec (only auto/best-free is f
   assert.equal(state.recognizedBuiltInAuto, true);
   assert.equal(state.variant, "coding");
   assert.notEqual(state.spec?.tier, "free");
+  assert.equal(state.spec?.strictTask, "coding");
 });

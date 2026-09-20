@@ -139,7 +139,8 @@ export function isPaidTierAutoId(autoId: string): boolean {
  * a candidate filter so the virtual combo only scores vision-capable models.
  */
 export type BuiltinAutoSpec =
-  { variant: AutoVariant | undefined } | { category: AutoCategory; tier?: AutoTier };
+  | { variant: AutoVariant | undefined; strictTask?: "coding" }
+  | { category: AutoCategory; tier?: AutoTier; strictTask?: "coding" };
 
 /**
  * Vision-flavored flat ids that MUST resolve to the `vision` category (candidate
@@ -161,6 +162,10 @@ const VISION_CATEGORY_AUTO_IDS: Record<string, { category: "vision"; tier?: Auto
 export function resolveBuiltinAutoSpec(modelStr: string, suffix: string): BuiltinAutoSpec {
   const visionSpec = VISION_CATEGORY_AUTO_IDS[modelStr];
   if (visionSpec) return visionSpec;
+
+  if (modelStr === "auto/best-coding") {
+    return { variant: "coding", strictTask: "coding" };
+  }
 
   const resolved = resolveAutoVariant(modelStr, suffix);
   if (resolved.recognized) {
@@ -220,6 +225,7 @@ export async function createBuiltinAutoCombo(
     const overlayTier = FLAT_TIER_OVERLAY_IDS[modelStr];
     const virtualCombo = await materialize(spec.variant, {
       ...(overlayTier ? { tier: overlayTier } : {}),
+      ...(spec.strictTask ? { strictTask: spec.strictTask } : {}),
     });
     virtualCombo.name = modelStr;
     virtualCombo.id = modelStr;

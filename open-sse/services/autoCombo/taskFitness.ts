@@ -467,6 +467,30 @@ export function getTaskFitness(model: string, taskType: string): number {
   return getTaskFitnessWithSource(model, taskType).score;
 }
 
+const STRICT_CODING_EVIDENCE_SOURCES = new Set([
+  "user_override",
+  "user_override:inherited",
+  "arena_elo",
+  "arena_elo:inherited",
+  "fitness_table",
+]);
+
+/**
+ * `auto/best-coding` is a quality contract, not merely a scoring hint. Keep a
+ * candidate only when it is explicitly coding-oriented (Codex/Coder/Code model
+ * identity) or when we have coding-specific evidence from an operator override,
+ * Arena score, or the curated versioned fitness table. Generic capability-tier
+ * inference is intentionally insufficient here: a domain-specialized model can
+ * support tools/reasoning without being a good general coding model.
+ */
+export function isStrictBestCodingCandidate(provider: string, model: string): boolean {
+  const identity = `${provider}/${model}`.toLowerCase();
+  if (/(^|[-._/])(codex|coder|code)(?=$|[-._/])/.test(identity)) return true;
+
+  const evidence = getTaskFitnessWithSource(model, "coding");
+  return evidence.score >= 0.8 && STRICT_CODING_EVIDENCE_SOURCES.has(evidence.source);
+}
+
 function isFitnessRetired(modelId: string): boolean {
   if (isVendorRetiredId(modelId)) return true;
   const { base, via } = resolveScoresAs(modelId);

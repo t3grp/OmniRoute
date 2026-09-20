@@ -20,7 +20,12 @@ import * as log from "../utils/logger";
 export type AutoRoutingState = {
   model: string;
   variant?: AutoVariant;
-  spec?: { category?: AutoCategory; tier?: AutoTier; family?: ModelFamily };
+  spec?: {
+    category?: AutoCategory;
+    tier?: AutoTier;
+    family?: ModelFamily;
+    strictTask?: "coding";
+  };
   isAutoRouting: boolean;
   recognizedBuiltInAuto: boolean;
   response: Response | null;
@@ -36,7 +41,12 @@ function classifyAutoModel(
     // free-tier candidate filter (excludes paid backends). Mirrors the
     // hardcoded spec in builtinCatalog.ts:createBuiltinAutoCombo. Without this,
     // chat.ts routes auto/best-free as plain auto/cheap (no tier filter).
-    const spec = model === "auto/best-free" ? { tier: "free" as const } : undefined;
+    const spec =
+      model === "auto/best-free"
+        ? { tier: "free" as const }
+        : model === "auto/best-coding"
+          ? { strictTask: "coding" as const }
+          : undefined;
     return { variant: AUTO_TEMPLATE_VARIANTS[model], spec, recognizedBuiltInAuto: true };
   }
   if (!model.startsWith("auto/")) return { recognizedBuiltInAuto };
