@@ -151,8 +151,12 @@ async function ensureConnection(node) {
   return created.connection;
 }
 
-async function ensureParamFilters(connection) {
-  const url = `${omniBaseUrl}/api/providers/${encodeURIComponent(connection.id)}/param-filters`;
+async function ensureParamFilters(node) {
+  // Param filters are keyed by the provider id used by the executor. For
+  // OpenAI-compatible custom nodes that is node.id, not the credential
+  // connection UUID. Storing this under connection.id silently leaves the
+  // runtime unfiltered.
+  const url = `${omniBaseUrl}/api/providers/${encodeURIComponent(node.id)}/param-filters`;
   const existing = await request(url, { headers: omniHeaders });
   const block = Array.isArray(existing?.block)
     ? existing.block.filter((value) => typeof value === "string")
@@ -173,7 +177,7 @@ async function ensureParamFilters(connection) {
       autoLearn: existing?.autoLearn === true,
     }),
   });
-  console.log(`OmniRoute param filters: ${required} blocked for ${connection.id}`);
+  console.log(`OmniRoute param filters: ${required} blocked for ${node.id}`);
 }
 
 async function testConnection(connection) {
@@ -205,7 +209,7 @@ try {
   await probeCos();
   const node = await ensureNode();
   const connection = await ensureConnection(node);
-  await ensureParamFilters(connection);
+  await ensureParamFilters(node);
   await testConnection(connection);
   await syncModels(connection);
   console.log(`READY: select ${publicModel} in OmniRoute`);
